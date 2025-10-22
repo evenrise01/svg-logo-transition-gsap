@@ -1,5 +1,6 @@
 import { Nav } from "@/components/Nav";
 import "./globals.css";
+import PageTransition from "@/components/PageTransition";
 
 
 export default function RootLayout({
@@ -11,8 +12,10 @@ export default function RootLayout({
     <html lang="en">
       <body
       >
+        <PageTransition>
       <Nav/>
         {children}
+        </PageTransition>
       </body>
     </html>
   );
