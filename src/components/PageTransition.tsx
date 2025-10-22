@@ -1,6 +1,6 @@
 "use client";
 import Logo from "./Logo";
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useCallback } from "react";
 import gsap from "gsap";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -53,7 +53,7 @@ const PageTransition = ({ children }: PageTransitionProps) => {
     //2. Play thee transition animation
     //3. Then continue with the navigation
 
-    const handleRouteChange = (url) => {
+    const handleRouteChange = (url: string) => {
       if (isTransitioning.current) return;
       isTransitioning.current = true;
       coverPage(url);
@@ -63,7 +63,9 @@ const PageTransition = ({ children }: PageTransitionProps) => {
     links.forEach((link) => {
       link.addEventListener("click", (e) => {
         e.preventDefault();
-        const href = e.currentTarget.href;
+        const target = e.currentTarget as HTMLAnchorElement;
+        if (!target) return;
+        const href = target.href;
         const url = new URL(href).pathname;
         if (url !== pathname) {
           handleRouteChange(url);
@@ -78,7 +80,7 @@ const PageTransition = ({ children }: PageTransitionProps) => {
     };
   }, [router, pathname]);
 
-  const coverPage = (url) => {
+  const coverPage = useCallback((url: string) => {
     const tl = gsap.timeline({
       onComplete: () => router.push(url),
     });
@@ -92,7 +94,7 @@ const PageTransition = ({ children }: PageTransitionProps) => {
     })
       .set(logoOverlayRef.current, { opacity: 1 }, "-=0.02")
       .set(
-        logoRef.current?.querySelector("path"),
+        logoRef.current?.querySelector("path") || {},
         {
           strokeDashoffset: logoRef.current
             ?.querySelector("path")
@@ -102,7 +104,7 @@ const PageTransition = ({ children }: PageTransitionProps) => {
         "-=0.25"
       )
       .to(
-        logoRef.current?.querySelector("path"),
+        logoRef.current?.querySelector("path") || {},
         {
           strokeDashoffset: 0,
           duration: 2,
@@ -110,17 +112,17 @@ const PageTransition = ({ children }: PageTransitionProps) => {
         },
         "-=0.5"
       )
-      .to(logoRef.current?.querySelector("path"), {
+      .to(logoRef.current?.querySelector("path") || {}, {
         fill: '#e3e4d8',
         duration: 1,
         ease: 'power2.inOut',
-      }, "-=0.5").
-      to(logoOverlayRef.current, {
+      }, "-=0.5")
+      .to(logoOverlayRef.current, {
         opacity: 0,
         duration: 0.25,
         ease: 'power2.inOut'
       })
-  };
+  }, [router]);
 
   const revealPage = () => {
     gsap.set(blocksRef.current, {scaleX: 1, transformOrigin: 'right'});
