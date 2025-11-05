@@ -11,79 +11,76 @@ interface PageTransitionProps {
 const PageTransition = ({ children }: PageTransitionProps) => {
   const router = useRouter();
   const pathname = usePathname();
-  const overlayRef = useRef<HTMLDivElement>(null); //full screen layer ref
+  const overlayRef = useRef<HTMLDivElement>(null);
   const logoOverlayRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<SVGSVGElement>(null);
   const blocksRef = useRef<HTMLDivElement[]>([]);
   const isTransitioning = useRef(false);
+  
+  // Cache SVG path length to avoid recalculating
+  const pathLengthRef = useRef<number>(0);
+  
+  // Store link handlers map for proper cleanup
+  const linkHandlersRef = useRef<Map<Element, (e: Event) => void>>(new Map());
 
-  useEffect(() => {
-    const createBlocks = () => {
-      if (!overlayRef.current) return;
-      overlayRef.current.innerHTML = "";
-      blocksRef.current = [];
-
-      for (let i = 0; i < 20; i++) {
-        const block = document.createElement("div");
-        block.className = "block";
-        overlayRef.current.appendChild(block);
-        blocksRef.current.push(block);
-      }
-    };
-    createBlocks();
-
-    gsap.set(blocksRef.current, { scaleX: 0, transformOrigin: "left" });
-
-    if (logoRef.current) {
-      const path = logoRef.current.querySelector("path");
-      if (path) {
-        const length = path.getTotalLength();
-        gsap.set(path, {
-          strokeDasharray: length,
-          strokeDashoffset: length,
-          fill: "transparent",
-        });
-      }
-    }
-
-    revealPage();
-
-    //Instead of letting browser instantly navigate to the new page. We want to:
-    //1.Pause the navigation action to the new page
-    //2. Play thee transition animation
-    //3. Then continue with the navigation
-
-    const handleRouteChange = (url: string) => {
-      if (isTransitioning.current) return;
+  // Stable event handler function
+  const handleLinkClick = useCallback((e: Event) => {
+    e.preventDefault();
+    const target = e.currentTarget as HTMLAnchorElement;
+    if (!target || isTransitioning.current) return;
+    
+    const url = new URL(target.href).pathname;
+    if (url !== pathname) {
       isTransitioning.current = true;
       coverPage(url);
-    };
+    }
+  }, [pathname]);
 
-    const links = document.querySelectorAll('a[href^="/"]');
-    links.forEach((link) => {
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        const target = e.currentTarget as HTMLAnchorElement;
-        if (!target) return;
-        const href = target.href;
-        const url = new URL(href).pathname;
-        if (url !== pathname) {
-          handleRouteChange(url);
+  // Preload images from a given URL
+  const preloadImages = useCallback(async (url: string): Promise<void> => {
+    try {
+      // Fetch the HTML of the target page
+      const response = await fetch(url);
+      const html = await response.text();
+      
+      // Parse HTML to find image URLs
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const images = doc.querySelectorAll('img[src], img[srcset]');
+      
+      const imagePromises: Promise<void>[] = [];
+      
+      images.forEach((img) => {
+        const src = img.getAttribute('src');
+        if (src && !src.startsWith('data:')) {
+          imagePromises.push(
+            new Promise((resolve) => {
+              const image = new Image();
+              image.onload = () => resolve();
+              image.onerror = () => resolve(); // Resolve anyway to not block
+              image.src = src.startsWith('http') ? src : new URL(src, window.location.origin).href;
+            })
+          );
         }
       });
-    });
+      
+      // Wait for all images to load (with timeout)
+      await Promise.race([
+        Promise.all(imagePromises),
+        new Promise(resolve => setTimeout(resolve, 2000)) // 2s timeout
+      ]);
+    } catch (error) {
+      console.error('Error preloading images:', error);
+      // Continue anyway
+    }
+  }, []);
 
-    return () => {
-      links.forEach((link) => {
-        link.removeEventListener("click", handleRouteChange);
-      });
-    };
-  }, [router, pathname]);
+  const coverPage = useCallback(async (url: string) => {
+    const path = logoRef.current?.querySelector("path");
+    const cachedLength = pathLengthRef.current;
 
-  const coverPage = useCallback((url: string) => {
-    const tl = gsap.timeline({
-      onComplete: () => router.push(url),
-    });
+    // Start the cover animation
+    const tl = gsap.timeline();
 
     tl.to(blocksRef.current, {
       scaleX: 1,
@@ -94,17 +91,15 @@ const PageTransition = ({ children }: PageTransitionProps) => {
     })
       .set(logoOverlayRef.current, { opacity: 1 }, "-=0.02")
       .set(
-        logoRef.current?.querySelector("path") || {},
+        path || {},
         {
-          strokeDashoffset: logoRef.current
-            ?.querySelector("path")
-            ?.getTotalLength(),
+          strokeDashoffset: cachedLength,
           fill: "transparent",
         },
         "-=0.25"
       )
       .to(
-        logoRef.current?.querySelector("path") || {},
+        path || {},
         {
           strokeDashoffset: 0,
           duration: 2,
@@ -112,32 +107,95 @@ const PageTransition = ({ children }: PageTransitionProps) => {
         },
         "-=0.5"
       )
-      .to(logoRef.current?.querySelector("path") || {}, {
+      .to(path || {}, {
         fill: '#e3e4d8',
         duration: 1,
         ease: 'power2.inOut',
-      }, "-=0.5")
-      .to(logoOverlayRef.current, {
-        opacity: 0,
-        duration: 0.25,
-        ease: 'power2.inOut'
-      })
-  }, [router]);
+      }, "-=0.5");
 
-  const revealPage = () => {
-    gsap.set(blocksRef.current, {scaleX: 1, transformOrigin: 'right'});
+    // Preload images while animation plays
+    await preloadImages(url);
+
+    // Complete the animation and navigate
+    await tl.to(logoOverlayRef.current, {
+      opacity: 0,
+      duration: 0.25,
+      ease: 'power2.inOut'
+    }).then();
+
+    router.push(url);
+  }, [router, preloadImages]);
+
+  const revealPage = useCallback(() => {
+    gsap.set(blocksRef.current, { scaleX: 1, transformOrigin: 'right' });
 
     gsap.to(blocksRef.current, {
-        scaleX: 0,
-        duration: 0.4,
-        stagger: 0.02,
-        ease: "power2.inOut",
-        transformOrigin: "right",
-        onComplete: () => {
-            isTransitioning.current = false;
-        }
-      })
-  }
+      scaleX: 0,
+      duration: 0.4,
+      stagger: 0.02,
+      ease: "power2.inOut",
+      transformOrigin: "right",
+      onComplete: () => {
+        isTransitioning.current = false;
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const createBlocks = () => {
+      if (!overlayRef.current) return;
+      overlayRef.current.innerHTML = "";
+      blocksRef.current = [];
+
+      // Use document fragment for better performance
+      const fragment = document.createDocumentFragment();
+      
+      for (let i = 0; i < 20; i++) {
+        const block = document.createElement("div");
+        block.className = "block";
+        fragment.appendChild(block);
+        blocksRef.current.push(block);
+      }
+      
+      overlayRef.current.appendChild(fragment);
+    };
+    
+    createBlocks();
+
+    gsap.set(blocksRef.current, { scaleX: 0, transformOrigin: "left" });
+
+    // Cache SVG path length once
+    if (logoRef.current) {
+      const path = logoRef.current.querySelector("path");
+      if (path) {
+        const length = path.getTotalLength();
+        pathLengthRef.current = length;
+        
+        gsap.set(path, {
+          strokeDasharray: length,
+          strokeDashoffset: length,
+          fill: "transparent",
+        });
+      }
+    }
+
+    revealPage();
+
+    // Attach event listeners with stable handlers
+    const links = document.querySelectorAll('a[href^="/"]');
+    links.forEach((link) => {
+      linkHandlersRef.current.set(link, handleLinkClick);
+      link.addEventListener("click", handleLinkClick);
+    });
+
+    // Proper cleanup
+    return () => {
+      linkHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener("click", handler);
+      });
+      linkHandlersRef.current.clear();
+    };
+  }, [pathname, handleLinkClick, revealPage]);
 
   return (
     <>
