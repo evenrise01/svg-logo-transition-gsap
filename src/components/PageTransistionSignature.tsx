@@ -1,9 +1,11 @@
 "use client";
-import Logo from "./Logo";
 import { ReactNode, useEffect, useRef, useCallback, useState } from "react";
 import gsap from "gsap";
 import { useRouter, usePathname } from "next/navigation";
 import Signature from "./Signature";
+import { ScrambleTextPlugin } from "gsap/all";
+
+gsap.registerPlugin(ScrambleTextPlugin);
 
 interface PageTransitionProps {
   children: ReactNode;
@@ -29,6 +31,7 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const logoOverlayRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<SVGSVGElement>(null);
+  const transitionTextRef = useRef<HTMLParagraphElement>(null);
   const isTransitioning = useRef(false);
 
   // Random text state
@@ -50,11 +53,12 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
       const url = new URL(target.href).pathname;
       if (url !== pathname) {
         isTransitioning.current = true;
-        // Set new random text before transition
-        setRandomText(
-          transitionTexts[Math.floor(Math.random() * transitionTexts.length)]
-        );
-        coverPage(url);
+        // Generate new random text
+        const newText = transitionTexts[Math.floor(Math.random() * transitionTexts.length)];
+        
+        // Start animation immediately with the new text
+        // Don't update state yet - let scramble handle it
+        coverPage(url, newText);
       }
     },
     [pathname]
@@ -102,15 +106,20 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
   }, []);
 
   const coverPage = useCallback(
-    async (url: string) => {
+    async (url: string, targetText: string) => {
       const path = logoRef.current?.querySelector("path");
       const cachedLength = pathLengthRef.current;
+      const textElement = transitionTextRef.current;
 
       // Start the cover animation
       const tl = gsap.timeline();
 
       // Slide overlay up from bottom
       tl.set(overlayRef.current, { y: "100%" })
+        .set(textElement, { 
+          opacity: 1,
+          textContent: "" // Start with empty text
+        })
         .to(overlayRef.current, {
           y: "0%",
           duration: 0.75,
@@ -132,14 +141,26 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
           },
           "-=0.3"
         )
+        // Scramble text animation from empty to target text
+        .to(textElement, {
+          duration: 1.2,
+          scrambleText: {
+            text: targetText,
+            chars: "!@#$%^&*()_+-=[]{}|;:,.<>?",
+            revealDelay: 0.3,
+            speed: 0.3,
+            tweenLength: false,
+          },
+          ease: "none",
+        }, "-=1.0")
         .to(
           path || {},
           {
-            fill: "none", //Change this to have fill of your color
+            fill: "none",
             duration: 0.8,
             ease: "power2.inOut",
           },
-          "-=0.5"
+          "-=0.7"
         );
 
       // Preload images while animation plays
@@ -155,6 +176,9 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
         .then();
 
       router.push(url);
+      
+      // Update state after navigation for next time
+      setRandomText(targetText);
     },
     [router, preloadImages]
   );
@@ -221,7 +245,9 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
           <Signature ref={logoRef} />
         </div>
         <div className="transition-text-container">
-          <p className="transition-text">{randomText}</p>
+          <p className="transition-text" ref={transitionTextRef}>
+            {randomText}
+          </p>
         </div>
       </div>
       {children}

@@ -167,6 +167,15 @@ body {
     width: 100%;
   }
 
+  .line {
+    overflow: hidden;
+  }
+  
+  .line span {
+    display: block;
+    will-change: transform;
+  }
+
   .transition-text {
     width: 100%;
     white-space: nowrap;
@@ -178,6 +187,7 @@ body {
     line-height: 1.25;
     font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
     text-transform: uppercase;
+    opacity: 0;
   }
 
   .col-content,
