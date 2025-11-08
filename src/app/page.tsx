@@ -1,3 +1,5 @@
+import Signature from "@/components/Signature";
+
 export default function Home() {
   return <>
   <div className="container">
