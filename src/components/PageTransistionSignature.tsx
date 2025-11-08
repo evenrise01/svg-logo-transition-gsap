@@ -143,13 +143,13 @@ const PageTransitionSignature = ({ children }: PageTransitionProps) => {
         )
         // Scramble text animation from empty to target text
         .to(textElement, {
-          duration: 1.2,
+          duration: 1.4,
           scrambleText: {
             text: targetText,
-            chars: "!@#$%^&*()_+-=[]{}|;:,.<>?",
-            revealDelay: 0.3,
-            speed: 0.3,
-            tweenLength: false,
+            revealDelay: 0,
+            speed: 1,
+            tweenLength: true,
+            delimiter: " ",
           },
           ease: "none",
         }, "-=1.0")
